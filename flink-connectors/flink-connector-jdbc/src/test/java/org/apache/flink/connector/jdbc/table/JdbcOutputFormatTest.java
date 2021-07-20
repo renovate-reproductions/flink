@@ -20,7 +20,7 @@ package org.apache.flink.connector.jdbc.table;
 
 import org.apache.flink.connector.jdbc.JdbcDataTestBase;
 import org.apache.flink.connector.jdbc.JdbcExecutionOptions;
-import org.apache.flink.connector.jdbc.internal.JdbcBatchingOutputFormat;
+import org.apache.flink.connector.jdbc.internal.JdbcOutputFormat;
 import org.apache.flink.connector.jdbc.internal.options.JdbcConnectorOptions;
 import org.apache.flink.connector.jdbc.internal.options.JdbcDmlOptions;
 import org.apache.flink.table.api.DataTypes;
@@ -59,10 +59,10 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
-/** Test suite for {@link JdbcDynamicOutputFormatBuilder}. */
-public class JdbcDynamicOutputFormatTest extends JdbcDataTestBase {
+/** Test suite for {@link JdbcOutputFormatBuilder}. */
+public class JdbcOutputFormatTest extends JdbcDataTestBase {
 
-    private static JdbcBatchingOutputFormat<RowData, ?, ?> outputFormat;
+    private static JdbcOutputFormat<RowData, ?, ?> outputFormat;
     private static String[] fieldNames = new String[] {"id", "title", "author", "price", "qty"};
     private static DataType[] fieldDataTypes =
             new DataType[] {
@@ -106,7 +106,7 @@ public class JdbcDynamicOutputFormatTest extends JdbcDataTestBase {
                             .build();
 
             outputFormat =
-                    new JdbcDynamicOutputFormatBuilder()
+                    new JdbcOutputFormatBuilder()
                             .setJdbcOptions(jdbcOptions)
                             .setFieldDataTypes(fieldDataTypes)
                             .setJdbcDmlOptions(dmlOptions)
@@ -138,7 +138,7 @@ public class JdbcDynamicOutputFormatTest extends JdbcDataTestBase {
                             .build();
 
             outputFormat =
-                    new JdbcDynamicOutputFormatBuilder()
+                    new JdbcOutputFormatBuilder()
                             .setJdbcOptions(jdbcOptions)
                             .setFieldDataTypes(fieldDataTypes)
                             .setJdbcDmlOptions(dmlOptions)
@@ -169,7 +169,7 @@ public class JdbcDynamicOutputFormatTest extends JdbcDataTestBase {
                             .build();
 
             outputFormat =
-                    new JdbcDynamicOutputFormatBuilder()
+                    new JdbcOutputFormatBuilder()
                             .setJdbcOptions(jdbcOptions)
                             .setFieldDataTypes(fieldDataTypes)
                             .setJdbcDmlOptions(dmlOptions)
@@ -206,7 +206,7 @@ public class JdbcDynamicOutputFormatTest extends JdbcDataTestBase {
                             .build();
 
             outputFormat =
-                    new JdbcDynamicOutputFormatBuilder()
+                    new JdbcOutputFormatBuilder()
                             .setJdbcOptions(jdbcOptions)
                             .setFieldDataTypes(fieldDataTypes)
                             .setJdbcDmlOptions(dmlOptions)
@@ -244,7 +244,7 @@ public class JdbcDynamicOutputFormatTest extends JdbcDataTestBase {
                             .build();
 
             outputFormat =
-                    new JdbcDynamicOutputFormatBuilder()
+                    new JdbcOutputFormatBuilder()
                             .setJdbcOptions(jdbcOptions)
                             .setFieldDataTypes(fieldDataTypes)
                             .setJdbcDmlOptions(dmlOptions)
@@ -286,7 +286,7 @@ public class JdbcDynamicOutputFormatTest extends JdbcDataTestBase {
                         .build();
 
         outputFormat =
-                new JdbcDynamicOutputFormatBuilder()
+                new JdbcOutputFormatBuilder()
                         .setJdbcOptions(jdbcOptions)
                         .setFieldDataTypes(fieldDataTypes)
                         .setJdbcDmlOptions(dmlOptions)
@@ -341,7 +341,7 @@ public class JdbcDynamicOutputFormatTest extends JdbcDataTestBase {
                 JdbcExecutionOptions.builder().withBatchSize(3).build();
 
         outputFormat =
-                new JdbcDynamicOutputFormatBuilder()
+                new JdbcOutputFormatBuilder()
                         .setJdbcOptions(jdbcOptions)
                         .setFieldDataTypes(fieldDataTypes)
                         .setJdbcDmlOptions(dmlOptions)
@@ -408,7 +408,7 @@ public class JdbcDynamicOutputFormatTest extends JdbcDataTestBase {
                 JdbcExecutionOptions.builder().withBatchSize(0).build();
 
         outputFormat =
-                new JdbcDynamicOutputFormatBuilder()
+                new JdbcOutputFormatBuilder()
                         .setJdbcOptions(jdbcOptions)
                         .setFieldDataTypes(fieldDataTypes)
                         .setJdbcDmlOptions(dmlOptions)
@@ -453,7 +453,7 @@ public class JdbcDynamicOutputFormatTest extends JdbcDataTestBase {
                         .build();
 
         outputFormat =
-                new JdbcDynamicOutputFormatBuilder()
+                new JdbcOutputFormatBuilder()
                         .setJdbcOptions(jdbcOptions)
                         .setFieldDataTypes(fieldDataTypes)
                         .setJdbcDmlOptions(dmlOptions)
