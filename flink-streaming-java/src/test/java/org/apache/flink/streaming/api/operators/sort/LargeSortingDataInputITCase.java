@@ -42,7 +42,7 @@ import org.apache.flink.streaming.runtime.io.StreamOneInputProcessor;
 import org.apache.flink.streaming.runtime.io.StreamTaskInput;
 import org.apache.flink.streaming.runtime.streamrecord.LatencyMarker;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
-import org.apache.flink.streaming.runtime.streamstatus.StreamStatus;
+import org.apache.flink.streaming.runtime.watermarkstatus.WatermarkStatus;
 
 import org.junit.Assert;
 import org.junit.Test;
@@ -210,7 +210,7 @@ public class LargeSortingDataInputITCase {
         public void emitWatermark(Watermark watermark) throws Exception {}
 
         @Override
-        public void emitStreamStatus(StreamStatus streamStatus) throws Exception {}
+        public void emitWatermarkStatus(WatermarkStatus watermarkStatus) throws Exception {}
 
         @Override
         public void emitLatencyMarker(LatencyMarker latencyMarker) throws Exception {}
@@ -252,15 +252,18 @@ public class LargeSortingDataInputITCase {
         @Override
         public DataInputStatus emitNext(DataOutput<Tuple3<Integer, String, byte[]>> output)
                 throws Exception {
-            if (recordsGenerated >= numberOfRecords) {
+            if (recordsGenerated == numberOfRecords) {
+                recordsGenerated++;
+                return DataInputStatus.END_OF_DATA;
+            } else if (recordsGenerated > numberOfRecords) {
                 return DataInputStatus.END_OF_INPUT;
             }
 
             output.emitRecord(
                     new StreamRecord<>(
                             Tuple3.of(rnd.nextInt(), randomString(rnd.nextInt(256)), buffer), 1));
-            if (recordsGenerated++ >= numberOfRecords) {
-                return DataInputStatus.END_OF_INPUT;
+            if (recordsGenerated++ == numberOfRecords) {
+                return DataInputStatus.END_OF_DATA;
             } else {
                 return DataInputStatus.MORE_AVAILABLE;
             }
