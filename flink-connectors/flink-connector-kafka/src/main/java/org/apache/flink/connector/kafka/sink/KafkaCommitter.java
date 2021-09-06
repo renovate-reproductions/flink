@@ -18,6 +18,7 @@
 package org.apache.flink.connector.kafka.sink;
 
 import org.apache.flink.api.connector.sink.Committer;
+import org.apache.flink.streaming.connectors.kafka.FlinkKafkaProducer;
 
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.errors.InvalidTxnStateException;
@@ -25,9 +26,12 @@ import org.apache.kafka.common.errors.ProducerFencedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.annotation.Nullable;
+
 import java.io.IOException;
-import java.util.Collections;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Properties;
 
 /**
@@ -37,44 +41,81 @@ import java.util.Properties;
  */
 class KafkaCommitter implements Committer<KafkaCommittable> {
 
+    private static final Logger LOG = LoggerFactory.getLogger(KafkaCommitter.class);
+
     private final Properties kafkaProducerConfig;
+
+    @Nullable private FlinkKafkaInternalProducer<?, ?> recoveryProducer;
 
     KafkaCommitter(Properties kafkaProducerConfig) {
         this.kafkaProducerConfig = kafkaProducerConfig;
     }
 
-    private static final Logger LOG = LoggerFactory.getLogger(KafkaCommitter.class);
-
     @Override
     public List<KafkaCommittable> commit(List<KafkaCommittable> committables) throws IOException {
-        committables.forEach(this::commitTransaction);
-        return Collections.emptyList();
+        List<KafkaCommittable> retryableCommittables = new ArrayList<>();
+        for (KafkaCommittable committable : committables) {
+            final String transactionalId = committable.getTransactionalId();
+            LOG.debug("Committing Kafka transaction {}", transactionalId);
+            Optional<Recyclable<? extends FlinkKafkaInternalProducer<?, ?>>> recyclable =
+                    committable.getProducer();
+            FlinkKafkaInternalProducer<?, ?> producer;
+            try {
+                producer =
+                        recyclable
+                                .<FlinkKafkaInternalProducer<?, ?>>map(Recyclable::getObject)
+                                .orElseGet(() -> getRecoveryProducer(committable));
+                producer.commitTransaction();
+                recyclable.ifPresent(Recyclable::close);
+            } catch (InvalidTxnStateException e) {
+                LOG.warn(
+                        "Unable to commit recovered transaction ({}) because it's in an invalid state. "
+                                + "Most likely the transaction has been aborted for some reason. Please check the Kafka logs for more details.",
+                        committable,
+                        e);
+                recyclable.ifPresent(Recyclable::close);
+            } catch (ProducerFencedException e) {
+                LOG.warn(
+                        "Unable to commit recovered transaction ({}) because its producer is already fenced."
+                                + " This means that you either have a different producer with the same '{}' (this is"
+                                + " unlikely with the '{}' as all generated ids are unique and shouldn't be reused)"
+                                + " or recovery took longer than '{}' ({}ms). In both cases this most likely signals data loss,"
+                                + " please consult the Flink documentation for more details.",
+                        committable,
+                        ProducerConfig.TRANSACTIONAL_ID_CONFIG,
+                        KafkaSink.class.getSimpleName(),
+                        ProducerConfig.TRANSACTION_TIMEOUT_CONFIG,
+                        FlinkKafkaProducer.getTransactionTimeout(kafkaProducerConfig),
+                        e);
+                recyclable.ifPresent(Recyclable::close);
+            } catch (Throwable e) {
+                LOG.warn("Cannot commit Kafka transaction, retrying.", e);
+                retryableCommittables.add(committable);
+            }
+        }
+        return retryableCommittables;
     }
 
     @Override
-    public void close() throws Exception {}
-
-    private void commitTransaction(KafkaCommittable committable) {
-        final String transactionalId = committable.getTransactionalId();
-        LOG.debug("Committing Kafka transaction {}", transactionalId);
-        try (FlinkKafkaInternalProducer<?, ?> producer =
-                new FlinkKafkaInternalProducer<>(createKafkaProducerConfig(transactionalId))) {
-            producer.resumeTransaction(committable.getProducerId(), committable.getEpoch());
-            producer.commitTransaction();
-        } catch (InvalidTxnStateException | ProducerFencedException e) {
-            // That means we have committed this transaction before.
-            LOG.warn(
-                    "Encountered error {} while recovering transaction {}. "
-                            + "Presumably this transaction has been already committed before",
-                    e,
-                    committable);
+    public void close() throws Exception {
+        if (recoveryProducer != null) {
+            recoveryProducer.close();
         }
     }
 
-    private Properties createKafkaProducerConfig(String transactionalId) {
-        final Properties copy = new Properties();
-        copy.putAll(kafkaProducerConfig);
-        copy.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, transactionalId);
-        return copy;
+    /**
+     * Creates a producer that can commit into the same transaction as the upstream producer that
+     * was serialized into {@link KafkaCommittable}.
+     */
+    private FlinkKafkaInternalProducer<?, ?> getRecoveryProducer(KafkaCommittable committable) {
+        if (recoveryProducer == null) {
+            recoveryProducer =
+                    new FlinkKafkaInternalProducer<>(
+                            kafkaProducerConfig, committable.getTransactionalId());
+        } else {
+            recoveryProducer.setTransactionId(committable.getTransactionalId());
+        }
+        recoveryProducer.resumeTransaction(committable.getProducerId(), committable.getEpoch());
+        return recoveryProducer;
     }
 }

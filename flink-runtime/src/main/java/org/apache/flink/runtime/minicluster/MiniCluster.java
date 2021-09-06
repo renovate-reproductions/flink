@@ -220,7 +220,9 @@ public class MiniCluster implements AutoCloseableAsync {
                                         .getNumTaskManagers()); // common + JM + RM + TMs
         this.dispatcherResourceManagerComponents = new ArrayList<>(1);
 
-        this.rpcTimeout = miniClusterConfiguration.getRpcTimeout();
+        // There shouldn't be any lost messages between the MiniCluster and the Flink components
+        // since they all run in the same process.
+        this.rpcTimeout = RpcUtils.INF_TIMEOUT;
         this.terminationFuture = CompletableFuture.completedFuture(null);
         running = false;
 
@@ -501,7 +503,7 @@ public class MiniCluster implements AutoCloseableAsync {
                 return new EmbeddedHaServicesWithLeadershipControl(executor);
             case CONFIGURED:
                 return HighAvailabilityServicesUtils.createAvailableOrEmbeddedServices(
-                        configuration, executor);
+                        configuration, executor, new ShutDownFatalErrorHandler());
             default:
                 throw new IllegalConfigurationException("Unknown HA Services " + haServices);
         }

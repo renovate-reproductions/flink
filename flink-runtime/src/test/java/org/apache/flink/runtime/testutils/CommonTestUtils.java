@@ -24,6 +24,9 @@ import org.apache.flink.api.common.time.Deadline;
 import org.apache.flink.core.execution.JobClient;
 import org.apache.flink.runtime.execution.ExecutionState;
 import org.apache.flink.runtime.executiongraph.AccessExecutionGraph;
+import org.apache.flink.runtime.executiongraph.AccessExecutionVertex;
+import org.apache.flink.runtime.executiongraph.ErrorInfo;
+import org.apache.flink.runtime.jobgraph.JobVertexID;
 import org.apache.flink.runtime.minicluster.MiniCluster;
 import org.apache.flink.util.FileUtils;
 import org.apache.flink.util.function.SupplierWithException;
@@ -43,6 +46,11 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Predicate;
+import java.util.stream.Stream;
+
+import static java.lang.String.format;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /** This class contains auxiliary methods for unit tests. */
 public class CommonTestUtils {
@@ -157,35 +165,63 @@ public class CommonTestUtils {
         }
     }
 
-    public static void waitForAllTaskRunning(MiniCluster miniCluster, JobID jobId)
-            throws Exception {
-        waitForAllTaskRunning(() -> miniCluster.getExecutionGraph(jobId).get(60, TimeUnit.SECONDS));
+    public static void waitForAllTaskRunning(
+            MiniCluster miniCluster, JobID jobId, boolean allowFinished) throws Exception {
+        waitForAllTaskRunning(() -> getGraph(miniCluster, jobId), allowFinished);
     }
 
-    public static void waitForAllTaskRunning(
-            SupplierWithException<AccessExecutionGraph, Exception> executionGraphSupplier)
-            throws Exception {
-        waitForAllTaskRunning(
-                executionGraphSupplier, Deadline.fromNow(Duration.of(1, ChronoUnit.MINUTES)));
+    private static AccessExecutionGraph getGraph(MiniCluster miniCluster, JobID jobId)
+            throws InterruptedException, java.util.concurrent.ExecutionException, TimeoutException {
+        return miniCluster.getExecutionGraph(jobId).get(60, TimeUnit.SECONDS);
     }
 
     public static void waitForAllTaskRunning(
             SupplierWithException<AccessExecutionGraph, Exception> executionGraphSupplier,
-            Deadline timeout)
+            boolean allowFinished)
             throws Exception {
+        waitForAllTaskRunning(
+                executionGraphSupplier,
+                Deadline.fromNow(Duration.of(1, ChronoUnit.MINUTES)),
+                allowFinished);
+    }
+
+    public static void waitForAllTaskRunning(
+            SupplierWithException<AccessExecutionGraph, Exception> executionGraphSupplier,
+            Deadline timeout,
+            boolean allowFinished)
+            throws Exception {
+        Predicate<AccessExecutionVertex> subtaskPredicate =
+                task -> {
+                    switch (task.getExecutionState()) {
+                        case RUNNING:
+                            return true;
+                        case FINISHED:
+                            if (allowFinished) {
+                                return true;
+                            } else {
+                                throw new RuntimeException("Sub-Task finished unexpectedly" + task);
+                            }
+                        default:
+                            return false;
+                    }
+                };
         waitUntilCondition(
                 () -> {
                     final AccessExecutionGraph graph = executionGraphSupplier.get();
+                    if (graph.getState().isGloballyTerminalState()) {
+                        final ErrorInfo failureInfo = graph.getFailureInfo();
+                        fail(
+                                format(
+                                        "Graph is in globally terminal state (%s)",
+                                        graph.getState()),
+                                failureInfo != null ? failureInfo.getException() : null);
+                    }
                     return graph.getState() == JobStatus.RUNNING
                             && graph.getAllVertices().values().stream()
                                     .allMatch(
                                             jobVertex ->
                                                     Arrays.stream(jobVertex.getTaskVertices())
-                                                            .allMatch(
-                                                                    task ->
-                                                                            task.getExecutionState()
-                                                                                    == ExecutionState
-                                                                                            .RUNNING));
+                                                            .allMatch(subtaskPredicate));
                 },
                 timeout);
     }
@@ -220,13 +256,13 @@ public class CommonTestUtils {
                             client.getJobExecutionResult().get();
                         } catch (Exception e) {
                             throw new IllegalStateException(
-                                    String.format(
+                                    format(
                                             "Job has entered %s state, but expecting %s",
                                             currentStatus, expectedStatus),
                                     e);
                         }
                         throw new IllegalStateException(
-                                String.format(
+                                format(
                                         "Job has entered a terminal state %s, but expecting %s",
                                         currentStatus, expectedStatus));
                     }
@@ -239,6 +275,46 @@ public class CommonTestUtils {
 
     public static void terminateJob(JobClient client, Duration timeout) throws Exception {
         client.cancel().get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+    }
+
+    public static void waitForSubtasksToFinish(
+            MiniCluster miniCluster, JobID job, JobVertexID id, boolean allSubtasks)
+            throws Exception {
+        Predicate<AccessExecutionVertex> subtaskPredicate =
+                subtask -> {
+                    ExecutionState state = subtask.getExecutionState();
+                    if (state == ExecutionState.FINISHED) {
+                        return true;
+                    } else if (state.isTerminal()) {
+                        throw new RuntimeException(
+                                format(
+                                        "Sub-Task %s is already in a terminal state %s",
+                                        subtask, state));
+                    } else {
+                        return false;
+                    }
+                };
+        waitUntilCondition(
+                () -> {
+                    AccessExecutionGraph graph = getGraph(miniCluster, job);
+                    if (graph.getState() != JobStatus.RUNNING) {
+                        return false;
+                    }
+                    Stream<AccessExecutionVertex> vertexStream =
+                            Arrays.stream(
+                                    graph.getAllVertices().values().stream()
+                                            .filter(jv -> jv.getJobVertexId().equals(id))
+                                            .findAny()
+                                            .orElseThrow(
+                                                    () ->
+                                                            new RuntimeException(
+                                                                    "Vertex not found " + id))
+                                            .getTaskVertices());
+                    return allSubtasks
+                            ? vertexStream.allMatch(subtaskPredicate)
+                            : vertexStream.anyMatch(subtaskPredicate);
+                },
+                Deadline.fromNow(Duration.of(1, ChronoUnit.MINUTES)));
     }
 
     /** Utility class to read the output of a process stream and forward it into a StringWriter. */

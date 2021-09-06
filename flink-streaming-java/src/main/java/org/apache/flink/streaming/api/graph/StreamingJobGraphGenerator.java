@@ -41,9 +41,9 @@ import org.apache.flink.runtime.jobgraph.JobGraphUtils;
 import org.apache.flink.runtime.jobgraph.JobVertex;
 import org.apache.flink.runtime.jobgraph.JobVertexID;
 import org.apache.flink.runtime.jobgraph.OperatorID;
-import org.apache.flink.runtime.jobgraph.tasks.AbstractInvokable;
 import org.apache.flink.runtime.jobgraph.tasks.CheckpointCoordinatorConfiguration;
 import org.apache.flink.runtime.jobgraph.tasks.JobCheckpointingSettings;
+import org.apache.flink.runtime.jobgraph.tasks.TaskInvokable;
 import org.apache.flink.runtime.jobgraph.topology.DefaultLogicalPipelinedRegion;
 import org.apache.flink.runtime.jobgraph.topology.DefaultLogicalTopology;
 import org.apache.flink.runtime.jobgraph.topology.LogicalVertex;
@@ -741,7 +741,7 @@ public class StreamingJobGraphGenerator {
         }
         config.setStateKeySerializer(vertex.getStateKeySerializer());
 
-        Class<? extends AbstractInvokable> vertexClass = vertex.getJobVertexClass();
+        Class<? extends TaskInvokable> vertexClass = vertex.getJobVertexClass();
 
         if (vertexClass.equals(StreamIterationHead.class)
                 || vertexClass.equals(StreamIterationTail.class)) {
@@ -1315,7 +1315,6 @@ public class StreamingJobGraphGenerator {
                                 .setCheckpointRetentionPolicy(retentionAfterTermination)
                                 .setExactlyOnce(
                                         getCheckpointingMode(cfg) == CheckpointingMode.EXACTLY_ONCE)
-                                .setPreferCheckpointForRecovery(cfg.isPreferCheckpointForRecovery())
                                 .setTolerableCheckpointFailureNumber(
                                         cfg.getTolerableCheckpointFailureNumber())
                                 .setUnalignedCheckpointsEnabled(cfg.isUnalignedCheckpointsEnabled())

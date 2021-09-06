@@ -82,8 +82,8 @@ public class KafkaPartitionSplitReaderTest {
     @BeforeClass
     public static void setup() throws Throwable {
         KafkaSourceTestEnv.setup();
-        KafkaSourceTestEnv.setupTopic(TOPIC1, true, true);
-        KafkaSourceTestEnv.setupTopic(TOPIC2, true, true);
+        KafkaSourceTestEnv.setupTopic(TOPIC1, true, true, KafkaSourceTestEnv::getRecordsForTopic);
+        KafkaSourceTestEnv.setupTopic(TOPIC2, true, true, KafkaSourceTestEnv::getRecordsForTopic);
         splitsByOwners =
                 KafkaSourceTestEnv.getSplitsByOwners(Arrays.asList(TOPIC1, TOPIC2), NUM_SUBTASKS);
         earliestOffsets =
@@ -200,6 +200,39 @@ public class KafkaPartitionSplitReaderTest {
             reader.fetch();
             assertEquals(NUM_RECORDS_PER_PARTITION - i - 1, (long) pendingRecords.get().getValue());
         }
+    }
+
+    @Test
+    public void testAssignEmptySplit() throws Exception {
+        KafkaPartitionSplitReader<Integer> reader = createReader();
+        final KafkaPartitionSplit normalSplit =
+                new KafkaPartitionSplit(
+                        new TopicPartition(TOPIC1, 0),
+                        KafkaPartitionSplit.EARLIEST_OFFSET,
+                        KafkaPartitionSplit.NO_STOPPING_OFFSET);
+        final KafkaPartitionSplit emptySplit =
+                new KafkaPartitionSplit(
+                        new TopicPartition(TOPIC2, 0),
+                        KafkaPartitionSplit.LATEST_OFFSET,
+                        KafkaPartitionSplit.LATEST_OFFSET);
+        reader.handleSplitsChanges(new SplitsAddition<>(Arrays.asList(normalSplit, emptySplit)));
+
+        // Fetch and check empty splits is added to finished splits
+        RecordsWithSplitIds<Tuple3<Integer, Long, Long>> recordsWithSplitIds = reader.fetch();
+        assertTrue(recordsWithSplitIds.finishedSplits().contains(emptySplit.splitId()));
+
+        // Assign another valid split to avoid consumer.poll() blocking
+        final KafkaPartitionSplit anotherNormalSplit =
+                new KafkaPartitionSplit(
+                        new TopicPartition(TOPIC1, 1),
+                        KafkaPartitionSplit.EARLIEST_OFFSET,
+                        KafkaPartitionSplit.NO_STOPPING_OFFSET);
+        reader.handleSplitsChanges(
+                new SplitsAddition<>(Collections.singletonList(anotherNormalSplit)));
+
+        // Fetch again and check empty split set is cleared
+        recordsWithSplitIds = reader.fetch();
+        assertTrue(recordsWithSplitIds.finishedSplits().isEmpty());
     }
 
     // ------------------

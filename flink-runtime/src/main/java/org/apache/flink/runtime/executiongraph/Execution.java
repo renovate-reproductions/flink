@@ -356,7 +356,7 @@ public class Execution
      *
      * @param taskRestore information to restore the state
      */
-    public void setInitialState(@Nullable JobManagerTaskRestore taskRestore) {
+    public void setInitialState(JobManagerTaskRestore taskRestore) {
         this.taskRestore = taskRestore;
     }
 
@@ -593,7 +593,10 @@ public class Execution
                                 if (failure == null) {
                                     vertex.notifyCompletedDeployment(this);
                                 } else {
-                                    if (failure instanceof TimeoutException) {
+                                    final Throwable actualFailure =
+                                            ExceptionUtils.stripCompletionException(failure);
+
+                                    if (actualFailure instanceof TimeoutException) {
                                         String taskname =
                                                 vertex.getTaskNameWithSubtaskIndex()
                                                         + " ("
@@ -608,9 +611,9 @@ public class Execution
                                                                 + getAssignedResourceLocation()
                                                                 + ") not responding after a rpcTimeout of "
                                                                 + rpcTimeout,
-                                                        failure));
+                                                        actualFailure));
                                     } else {
-                                        markFailed(failure);
+                                        markFailed(actualFailure);
                                     }
                                 }
                             },
