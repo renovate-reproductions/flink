@@ -16,17 +16,20 @@
  * limitations under the License.
  */
 
-package org.apache.flink.streaming.api.operators;
+package org.apache.flink.table.api;
+
+import org.apache.flink.annotation.PublicEvolving;
+import org.apache.flink.table.expressions.TableSymbol;
+import org.apache.flink.table.functions.BuiltInFunctionDefinitions;
 
 /**
- * Interface for setting and querying the current key of keyed operations.
- *
- * <p>This is mainly used by the timer system to query the key when creating timers and to set the
- * correct key context when firing a timer.
+ * Behavior of {@link BuiltInFunctionDefinitions#JSON_QUERY} in case a path expression is empty or
+ * raises an error.
  */
-public interface KeyContext {
-
-    void setCurrentKey(Object key);
-
-    Object getCurrentKey();
+@PublicEvolving
+public enum JsonQueryOnEmptyOrError implements TableSymbol {
+    NULL,
+    EMPTY_ARRAY,
+    EMPTY_OBJECT,
+    ERROR,
 }
