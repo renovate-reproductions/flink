@@ -323,7 +323,10 @@ public class CheckpointCoordinator {
 
         try {
             this.checkpointStorageView = checkpointStorage.createCheckpointStorage(job);
-            checkpointStorageView.initializeBaseLocations();
+
+            if (isPeriodicCheckpointingConfigured()) {
+                checkpointStorageView.initializeBaseLocationsForCheckpoint();
+            }
         } catch (IOException e) {
             throw new FlinkRuntimeException(
                     "Failed to create checkpoint storage at checkpoint coordinator side.", e);
@@ -650,6 +653,12 @@ public class CheckpointCoordinator {
             triggerTasks(request, timestamp, checkpoint)
                     .exceptionally(
                             failure -> {
+                                LOG.info(
+                                        "Triggering Checkpoint {} for job {} failed due to {}",
+                                        checkpoint.getCheckpointID(),
+                                        job,
+                                        failure);
+
                                 final CheckpointException cause;
                                 if (failure instanceof CheckpointException) {
                                     cause = (CheckpointException) failure;
@@ -894,7 +903,7 @@ public class CheckpointCoordinator {
                 }
             } else {
                 LOG.info(
-                        "Failed to trigger checkpoint for job {} since {}",
+                        "Failed to trigger checkpoint for job {} because {}",
                         job,
                         throwable.getMessage());
             }
