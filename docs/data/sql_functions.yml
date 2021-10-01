@@ -515,8 +515,22 @@ conditional:
     description: Returns resultX when the first conditionX is met. When no condition is met, returns result_z if it is provided and returns NULL otherwise.
   - sql: NULLIF(value1, value2)
     description: Returns NULL if value1 is equal to value2; returns value1 otherwise. E.g., NULLIF(5, 5) returns NULL; NULLIF(5, 0) returns 5.
-  - sql: COALESCE(value1, value2 [, value3]*)
-    description: Returns the first value that is not NULL from value1, value2, .... E.g., COALESCE(NULL, 5) returns 5.
+  - sql: COALESCE(value1 [, value2]*)
+    table: coalesce(value1, [, value2]*)
+    description: |
+      Returns the first argument that is not NULL.
+
+      If all arguments are NULL, it returns NULL as well. The return type is the least restrictive, common type of all of its arguments.
+      The return type is nullable if all arguments are nullable as well.
+
+      ```
+      -- Returns 'default'
+      COALESCE(NULL, 'default')
+
+      -- Returns the first non-null value among f0 and f1,
+      -- or 'default' if f0 and f1 are both NULL
+      COALESCE(f0, f1, 'default')
+      ```
   - sql: IF(condition, true_value, false_value)
     description: Returns the true_value if condition is met, otherwise false_value. E.g., IF(5 > 3, 5, 3) returns 5.
   - sql: IFNULL(input, null_replacement)
@@ -652,19 +666,23 @@ json:
       behavior for `ON EMPTY`, and raises an error for `ON ERROR`.
 
       ```
-      // STRING: "true"
+      -- "true"
       JSON_VALUE('{"a": true}', '$.a')
 
-      // BOOLEAN: true
+      -- TRUE
       JSON_VALUE('{"a": true}', '$.a' RETURNING BOOLEAN)
 
-      // STRING: "false"
+      -- "false"
       JSON_VALUE('{"a": true}', 'lax $.b'
           DEFAULT FALSE ON EMPTY)
 
-      // STRING: "false"
+      -- "false"
       JSON_VALUE('{"a": true}', 'strict $.b'
           DEFAULT FALSE ON ERROR)
+
+      -- 0.998D
+      JSON_VALUE('{"a.b": [0.998,0.996]}','$.["a.b"][0]' 
+          RETURNING DOUBLE)
       ```
   - sql: JSON_QUERY(jsonValue, path [ { WITHOUT | WITH CONDITIONAL | WITH UNCONDITIONAL } [ ARRAY ] WRAPPER ] [ { NULL | EMPTY ARRAY | EMPTY OBJECT | ERROR } ON EMPTY ] [ { NULL | EMPTY ARRAY | EMPTY OBJECT | ERROR } ON ERROR ])
     table: STRING.jsonQuery(path [, JsonQueryWrapper [, JsonQueryOnEmptyOrError, JsonQueryOnEmptyOrError ] ])
@@ -687,6 +705,9 @@ json:
       JSON_QUERY('[1, 2]', '$')
       -- NULL
       JSON_QUERY(CAST(NULL AS STRING), '$')
+      -- '["c1","c2"]'
+      JSON_QUERY('{"a":[{"c":"c1"},{"c":"c2"}]}',
+          'lax $.a[*].c')
 
       -- Wrap result into an array
       -- '[{}]'
