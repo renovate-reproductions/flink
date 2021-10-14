@@ -21,6 +21,11 @@ jobs:
           java-version: '8'
           distribution: 'adopt'
 
+      - name: Set up Maven 3.2.5
+        uses: stCarolas/setup-maven@v4.2
+        with:
+          maven-version: 3.2.5
+
       - name: Cache local Maven repository
         uses: actions/cache@v2
         with:
