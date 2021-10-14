@@ -29,8 +29,5 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-maven-
 
-      - name: Build Flink RPC Akka Loader
-        run: mvn package -pl flink-rpc/flink-rpc-akka,flink-rpc/flink-rpc-akka-loader
-
       - name: Build Flink with Maven
-        run: mvn clean install -T1C
+        run: mvn clean install
