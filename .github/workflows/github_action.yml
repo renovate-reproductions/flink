@@ -35,4 +35,4 @@ jobs:
             ${{ runner.os }}-maven-
 
       - name: Build Flink Hbase with Maven
-        run: mvn clean install -rf :flink-connector-hbase-1.4_2.12
+        run: mvn clean install
