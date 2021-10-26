@@ -27,28 +27,24 @@ import org.apache.flink.table.planner.codegen.GenerateUtils._
 import org.apache.flink.table.planner.codegen.GeneratedExpression.{ALWAYS_NULL, NEVER_NULL, NO_CODE}
 import org.apache.flink.table.planner.codegen.{CodeGenException, CodeGenUtils, CodeGeneratorContext, GeneratedExpression}
 import org.apache.flink.table.planner.utils.JavaScalaConversionUtil.toScala
-import org.apache.flink.table.runtime.functions.{SqlDateTimeUtils, SqlFunctionUtils}
+import org.apache.flink.table.runtime.functions.SqlFunctionUtils
 import org.apache.flink.table.runtime.types.LogicalTypeDataTypeConverter.fromLogicalTypeToDataType
 import org.apache.flink.table.runtime.types.PlannerTypeUtils
 import org.apache.flink.table.runtime.types.PlannerTypeUtils.{isInteroperable, isPrimitive}
-import org.apache.flink.table.runtime.typeutils.TypeCheckUtils
 import org.apache.flink.table.runtime.typeutils.TypeCheckUtils._
 import org.apache.flink.table.types.logical.LogicalTypeFamily.DATETIME
 import org.apache.flink.table.types.logical.LogicalTypeRoot._
 import org.apache.flink.table.types.logical._
 import org.apache.flink.table.types.logical.utils.LogicalTypeCasts.supportsExplicitCast
-import org.apache.flink.table.types.logical.utils.LogicalTypeChecks.getFieldTypes
+import org.apache.flink.table.types.logical.utils.LogicalTypeChecks.{getFieldTypes, hasFamily}
 import org.apache.flink.table.types.logical.utils.LogicalTypeMerging.findCommonType
+import org.apache.flink.table.utils.DateTimeUtils
 import org.apache.flink.util.Preconditions.checkArgument
-
-import org.apache.calcite.avatica.util.DateTimeUtils.MILLIS_PER_DAY
-import org.apache.calcite.avatica.util.{DateTimeUtils, TimeUnitRange}
-import org.apache.calcite.util.BuiltInMethod
+import org.apache.flink.table.utils.DateTimeUtils.MILLIS_PER_DAY
 
 import java.lang.{StringBuilder => JStringBuilder}
 import java.nio.charset.StandardCharsets
 import java.util.Arrays.asList
-
 import scala.collection.JavaConversions._
 
 /**
@@ -996,7 +992,7 @@ object ScalarOperatorGens {
       operand.copy(resultType = targetType)
 
     // Date/Time/Timestamp -> String
-    case (_, VARCHAR | CHAR) if TypeCheckUtils.isTimePoint(operand.resultType) =>
+    case (_, VARCHAR | CHAR) if isTimePoint(operand.resultType) =>
       generateStringResultCallIfArgsNotNull(ctx, Seq(operand), targetType) {
         operandTerm =>
           s"${localTimeToStringCode(ctx, operand.resultType, operandTerm.head)}"
@@ -1004,18 +1000,16 @@ object ScalarOperatorGens {
 
     // Interval Months -> String
     case (INTERVAL_YEAR_MONTH, VARCHAR | CHAR) =>
-      val method = qualifyMethod(BuiltInMethod.INTERVAL_YEAR_MONTH_TO_STRING.method)
-      val timeUnitRange = qualifyEnum(TimeUnitRange.YEAR_TO_MONTH)
+      val method = qualifyMethod(BuiltInMethods.INTERVAL_YEAR_MONTH_TO_STRING)
       generateStringResultCallIfArgsNotNull(ctx, Seq(operand), targetType) {
-        terms => s"$method(${terms.head}, $timeUnitRange)"
+        terms => s"$method(${terms.head})"
       }
 
     // Interval Millis -> String
     case (INTERVAL_DAY_TIME, VARCHAR | CHAR) =>
-      val method = qualifyMethod(BuiltInMethod.INTERVAL_DAY_TIME_TO_STRING.method)
-      val timeUnitRange = qualifyEnum(TimeUnitRange.DAY_TO_SECOND)
+      val method = qualifyMethod(BuiltInMethods.INTERVAL_DAY_TIME_TO_STRING)
       generateStringResultCallIfArgsNotNull(ctx, Seq(operand), targetType) {
-        terms => s"$method(${terms.head}, $timeUnitRange, 3)" // milli second precision
+        terms => s"$method(${terms.head})" // milli second precision
       }
 
     // Array -> String
@@ -1085,7 +1079,7 @@ object ScalarOperatorGens {
 
     // String -> NUMERIC TYPE (not Character)
     case (VARCHAR | CHAR, _)
-      if TypeCheckUtils.isNumeric(targetType) =>
+      if isNumeric(targetType) =>
       targetType match {
         case dt: DecimalType =>
           generateUnaryOperatorIfNotNull(ctx, targetType, operand) { operandTerm =>
@@ -1180,20 +1174,14 @@ object ScalarOperatorGens {
       }
 
     // Boolean -> NUMERIC TYPE
-    case (BOOLEAN, _) if TypeCheckUtils.isNumeric(targetType) =>
+    case (BOOLEAN, _) if isNumeric(targetType) =>
       val targetTypeTerm = primitiveTypeTermForType(targetType)
       generateUnaryOperatorIfNotNull(ctx, targetType, operand) {
         operandTerm => s"($targetTypeTerm) ($operandTerm ? 1 : 0)"
       }
 
-    // DECIMAL -> Boolean
-    case (DECIMAL, BOOLEAN) =>
-      generateUnaryOperatorIfNotNull(ctx, targetType, operand) {
-        operandTerm => s"$DECIMAL_UTIL.castToBoolean($operandTerm)"
-      }
-
     // NUMERIC TYPE -> Boolean
-    case (_, BOOLEAN) if isNumeric(operand.resultType) =>
+    case (_, BOOLEAN) if hasFamily(operand.resultType, LogicalTypeFamily.INTEGER_NUMERIC) =>
       generateUnaryOperatorIfNotNull(ctx, targetType, operand) {
         operandTerm => s"$operandTerm != 0"
       }
@@ -1798,7 +1786,7 @@ object ScalarOperatorGens {
     val resultTypeTerm = boxedTypeTermForType(widerType.get)
 
     def castIfNumeric(t: GeneratedExpression): String = {
-      if (TypeCheckUtils.isNumeric(widerType.get)) {
+      if (isNumeric(widerType.get)) {
          s"${numericCasting(t.resultType, widerType.get).apply(t.resultTerm)}"
       } else {
          s"${t.resultTerm}"
@@ -2039,17 +2027,17 @@ object ScalarOperatorGens {
     val stringValue = stringLiteral.literalValue.get.toString
     val literalCode = expectType.getTypeRoot match {
       case DATE =>
-        SqlDateTimeUtils.dateStringToUnixDate(stringValue) match {
+        DateTimeUtils.dateStringToUnixDate(stringValue) match {
           case null => throw new ValidationException(s"String '$stringValue' is not a valid date")
           case v => v
         }
       case TIME_WITHOUT_TIME_ZONE =>
-        SqlDateTimeUtils.timeStringToUnixDate(stringValue) match {
+        DateTimeUtils.timeStringToUnixDate(stringValue) match {
           case null => throw new ValidationException(s"String '$stringValue' is not a valid time")
           case v => v
         }
       case TIMESTAMP_WITHOUT_TIME_ZONE =>
-        SqlDateTimeUtils.toTimestampData(stringValue) match {
+        DateTimeUtils.toTimestampData(stringValue) match {
           case null =>
             throw new ValidationException(s"String '$stringValue' is not a valid timestamp")
           case v => s"${CodeGenUtils.TIMESTAMP_DATA}.fromEpochMillis(" +
@@ -2496,7 +2484,7 @@ object ScalarOperatorGens {
       operandTerm: String): String =
     fromType.getTypeRoot match {
       case DATE =>
-        s"${qualifyMethod(BuiltInMethod.UNIX_DATE_TO_STRING.method)}($operandTerm)"
+        s"${qualifyMethod(BuiltInMethods.UNIX_DATE_TO_STRING)}($operandTerm)"
       case TIME_WITHOUT_TIME_ZONE =>
         s"${qualifyMethod(BuiltInMethods.UNIX_TIME_TO_STRING)}($operandTerm)"
       case TIMESTAMP_WITHOUT_TIME_ZONE => // including rowtime indicator

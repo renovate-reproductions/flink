@@ -7,7 +7,7 @@
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,17 +16,20 @@
  * limitations under the License.
  */
 
-package org.apache.flink.streaming.runtime.tasks;
+package org.apache.flink.runtime.io.network.netty;
 
-/**
- * An interface marking a task as capable of handling exceptions thrown by different threads, other
- * than the one executing the task itself.
- */
-public interface AsyncExceptionHandler {
+import org.apache.flink.runtime.io.network.partition.consumer.RemoteInputChannel;
 
-    /**
-     * Handles an exception thrown by another thread (e.g. a TriggerTask), other than the one
-     * executing the main task.
-     */
-    void handleAsyncException(String message, Throwable exception);
+import javax.annotation.Nullable;
+
+/** Abstract class for representing the output message. */
+abstract class ClientOutboundMessage {
+    protected final RemoteInputChannel inputChannel;
+
+    ClientOutboundMessage(RemoteInputChannel inputChannel) {
+        this.inputChannel = inputChannel;
+    }
+
+    @Nullable
+    abstract Object buildMessage();
 }
